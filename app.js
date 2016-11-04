@@ -14,8 +14,6 @@ const Retry = require('superagent-retry');
 const Moment = require('moment');
 const Inquirer = require('inquirer');
 const Chalk = require('chalk');
-const Yargs = require('yargs');
-const Commander = require('commander');
 
 
 let gArgv = null;
