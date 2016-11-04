@@ -1,6 +1,6 @@
 {
   "name": "chijidun-cli",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "The Chi Ji Dun command line utility.",
   "bin": {
     "chijidun": "app.js"
