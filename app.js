@@ -256,6 +256,10 @@ function showOrderInfo() {
 function updateOrderInfo(cb) {
     return getMembersAndOrder(gInfo.cid, function(res) {
         let jsonMembersAndOrder = JSON.parse(res.text);
+        if (!jsonMembersAndOrder.data) {
+            console.log(Chalk.white(`Cookie 失效, 需要`, Chalk.underline.bgRed(`重新登录`)));
+            return procMain();
+        }
         gInfo.order = jsonMembersAndOrder.data.order;
         return cb && cb(res);
     });
