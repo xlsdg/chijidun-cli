@@ -311,13 +311,7 @@ function procOrderInfo(aws) {
 function getCid(strHtml) {
     let regexCid = /cid\s=\s'(\d+?)';/i;
     let arrCid = strHtml.match(regexCid);
-
-    if (arrCid.length !== 2) {
-        console.error('Can\'t get cid!!!');
-        return null;
-    }
-
-    return arrCid[1];
+    return ((arrCid.length !== 2) ? null : arrCid[1]);
 }
 
 function findCookieByKey(key) {
