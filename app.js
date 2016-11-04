@@ -37,6 +37,7 @@ let gCookie = [];
 
 let gInfo = {
     'cid': '',
+    'time': '00:00:00',
     'members': {}, // 餐厅列表
     'address': {}, // 收获地址
     'order': false, // 订单 id
@@ -53,7 +54,7 @@ function init() {
 function main() {
     init();
 
-    console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版) v1.0.0'));
+    console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版) v1.2.0'));
 
     return procMain();
 }
@@ -211,6 +212,10 @@ function menuSaveOrder(cb) {
         ],
     }];
 
+    if ((new Date().getTime()) >= getEndTime()) {
+        questions[0].choices.shift();
+    }
+
     return Inquirer.prompt(questions).then(function(aws) {
         cb && cb(aws);
     });
@@ -229,15 +234,25 @@ function menuDeleteOrder(cb) {
         ],
     }];
 
+    if ((new Date().getTime()) >= getEndTime()) {
+        questions[0].choices.shift();
+    }
+
     return Inquirer.prompt(questions).then(function(aws) {
         cb && cb(aws);
     });
 }
 
+function getEndTime() {
+    let arrTime = gInfo.time.split(':');
+    return (new Date().setHours(arrTime[0], arrTime[1], arrTime[2], 0));
+}
+
 function showHtmlInfo(strHtml) {
     let $order = Cheerio.load(strHtml);
+    gInfo.time = $order('span[name=time]').eq(0).text() + ':00';
     console.log(Chalk.green(`欢迎 ${$order('.company-name').text()}(${$order('.company-desc').text()}) 的用户~`));
-    console.log(Chalk.white(`订餐截止时间 `, Chalk.underline.bgRed($order('span[name=time]').eq(0).text())));
+    console.log(Chalk.white(`订餐截止时间 `, Chalk.underline.bgRed(gInfo.time)));
 }
 
 function showOrderInfo() {

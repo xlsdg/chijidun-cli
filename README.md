@@ -9,6 +9,13 @@ $ npm install -g chijidun-cli
 ```
 
 
+## Update
+
+```
+$ npm update -g chijidun-cli
+```
+
+
 ## Usage
 
 ```
