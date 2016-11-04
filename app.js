@@ -547,7 +547,7 @@ function deleteOrder(orderId, cb) {
         .type('form')
         .withCredentials()
         .set(headers)
-        .send(encodeURI(`orderId=${orderId}`))
+        .send(`orderId=${orderId}`)
         .charset('utf-8')
         .retry(2)
         .end(function(err, res) {
