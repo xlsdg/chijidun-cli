@@ -16,8 +16,6 @@ const Inquirer = require('inquirer');
 const Chalk = require('chalk');
 
 
-let gArgv = null;
-
 let gHeaders = {
     'Accept': 'application/json, text/javascript, */*; q=0.01',
     'Accept-Encoding': 'gzip, deflate, sdch',
@@ -44,7 +42,6 @@ let gInfo = {
 main();
 
 function init() {
-    gArgv = Yargs.argv;
     Charset(SuperAgent);
     Retry(SuperAgent);
 }
@@ -52,7 +49,7 @@ function init() {
 function main() {
     init();
 
-    console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版) v1.2.0'));
+    console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版) v1.3.2'));
 
     return procMain();
 }
