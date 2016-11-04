@@ -245,8 +245,10 @@ function showOrderInfo() {
         console.log(Chalk.inverse(`您今天还未点餐哦!`));
         return menuSaveOrder(procOrderInfo);
     } else {
+        let $lis = Cheerio.load(gInfo.order.lis);
         console.log(Chalk.magenta(`您今天的点餐订单信息:`));
         console.log(Chalk.white(`单号: ${gInfo.order.id}`));
+        console.log(Chalk.white(`餐厅: ${$lis('span').text().split('|')[0]}`));
         console.log(Chalk.white(`套餐: ${gInfo.order.menus}`));
         console.log(Chalk.white(`地址: ${gInfo.order.address}`));
         return menuDeleteOrder(procOrderInfo);
