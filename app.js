@@ -174,6 +174,7 @@ function menuOrder(cb) {
     }];
 
     _.forEach(gInfo.members, function(member, id) {
+        questions[0].choices.push(new Inquirer.Separator());
         questions[0].choices.push({
             'name': member.name,
             'disabled': '-。-',
