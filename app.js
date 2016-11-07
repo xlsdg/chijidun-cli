@@ -113,7 +113,7 @@ function procMain() {
     });
 }
 
-function menuLogin(cb) {
+function menuLogin(done) {
     let questions = [{
         'type': 'input',
         'name': 'phone',
@@ -138,11 +138,11 @@ function menuLogin(cb) {
     }];
 
     return Inquirer.prompt(questions).then(function(aws) {
-        cb && cb(aws);
+        done && done(aws);
     });
 }
 
-function menuAddress(mid, cb) {
+function menuAddress(mid, done) {
     let questions = [{
         type: 'list',
         name: 'address',
@@ -161,11 +161,11 @@ function menuAddress(mid, cb) {
     questions[0].choices.push({'name': '返回', 'value': 'back'});
 
     return Inquirer.prompt(questions).then(function(aws) {
-        cb && cb(mid, aws);
+        done && done(mid, aws);
     });
 }
 
-function menuOrder(cb) {
+function menuOrder(done) {
     let questions = [{
         type: 'list',
         name: 'mid',
@@ -191,11 +191,11 @@ function menuOrder(cb) {
     questions[0].choices.push({'name': '返回', 'value': 'back'});
 
     return Inquirer.prompt(questions).then(function(aws) {
-        cb && cb(aws);
+        done && done(aws);
     });
 }
 
-function menuSaveOrder(cb) {
+function menuSaveOrder(done) {
     let questions = [{
         type: 'list',
         name: 'step',
@@ -213,11 +213,11 @@ function menuSaveOrder(cb) {
     }
 
     return Inquirer.prompt(questions).then(function(aws) {
-        cb && cb(aws);
+        done && done(aws);
     });
 }
 
-function menuDeleteOrder(cb) {
+function menuDeleteOrder(done) {
     let questions = [{
         type: 'list',
         name: 'step',
@@ -235,7 +235,7 @@ function menuDeleteOrder(cb) {
     }
 
     return Inquirer.prompt(questions).then(function(aws) {
-        cb && cb(aws);
+        done && done(aws);
     });
 }
 
@@ -266,7 +266,7 @@ function showOrderInfo() {
     }
 }
 
-function updateOrderInfo(cb) {
+function updateOrderInfo(done) {
     return getMembersAndOrder(gInfo.cid, function(res) {
         let jsonMembersAndOrder = JSON.parse(res.text);
         if (!jsonMembersAndOrder.data) {
@@ -274,7 +274,7 @@ function updateOrderInfo(cb) {
             return procMain();
         }
         gInfo.order = jsonMembersAndOrder.data.order;
-        return cb && cb(res);
+        return done && done(res);
     });
 }
 
@@ -360,7 +360,7 @@ function updateCookieByHeader(header) {
     });
 }
 
-function getLogin(cb) {
+function getLogin(done) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Upgrade-Insecure-Requests': 1
@@ -377,12 +377,12 @@ function getLogin(cb) {
             if (err || !res.ok) {
                 console.error(err);
             } else {
-                cb && cb(res);
+                done && done(res);
             }
         });
 }
 
-function postLogin(username, password, cb) {
+function postLogin(username, password, done) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Encoding': 'gzip, deflate',
@@ -407,11 +407,11 @@ function postLogin(username, password, cb) {
         .charset('utf-8')
         .retry(2)
         .end(function(err, res) {
-            cb && cb(res);
+            done && done(res);
         });
 }
 
-function getLogOut(cb) {
+function getLogOut(done) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Cookie': getCookie(),
@@ -428,11 +428,11 @@ function getLogOut(cb) {
         .charset('utf-8')
         .retry(2)
         .end(function(err, res) {
-            cb && cb(res);
+            done && done(res);
         });
 }
 
-function getOrder(cb) {
+function getOrder(done) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Cookie': getCookie(),
@@ -451,12 +451,12 @@ function getOrder(cb) {
             if (err || !res.ok) {
                 console.error(err);
             } else {
-                cb && cb(res);
+                done && done(res);
             }
         });
 }
 
-function getMembersAndOrder(cid, cb) {
+function getMembersAndOrder(cid, done) {
     let headers = _.assign({}, gHeaders, {
         'Cookie': getCookie(),
     });
@@ -478,12 +478,12 @@ function getMembersAndOrder(cid, cb) {
             if (err || !res.ok) {
                 console.error(err);
             } else {
-                cb && cb(res);
+                done && done(res);
             }
         });
 }
 
-function getMenu(mid, cb) {
+function getMenu(mid, done) {
     let headers = _.assign({}, gHeaders, {
         'Cookie': getCookie(),
     });
@@ -505,12 +505,12 @@ function getMenu(mid, cb) {
             if (err || !res.ok) {
                 console.error(err);
             } else {
-                cb && cb(res);
+                done && done(res);
             }
         });
 }
 
-function saveOrder(menuId, addrId, cb) {
+function saveOrder(menuId, addrId, done) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'application/json, text/javascript, */*; q=0.01',
         'Accept-Encoding': 'gzip, deflate',
@@ -533,12 +533,12 @@ function saveOrder(menuId, addrId, cb) {
             if (err || !res.ok) {
                 console.error(err);
             } else {
-                cb && cb(res);
+                done && done(res);
             }
         });
 }
 
-function deleteOrder(orderId, cb) {
+function deleteOrder(orderId, done) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'application/json, text/javascript, */*; q=0.01',
         'Accept-Encoding': 'gzip, deflate',
@@ -561,12 +561,12 @@ function deleteOrder(orderId, cb) {
             if (err || !res.ok) {
                 console.error(err);
             } else {
-                cb && cb(res);
+                done && done(res);
             }
         });
 }
 
-function memberFull(mid, cb) {
+function memberFull(mid, done) {
     let headers = _.assign({}, gHeaders, {
         'Cookie': getCookie(),
     });
@@ -588,12 +588,12 @@ function memberFull(mid, cb) {
             if (err || !res.ok) {
                 console.error(err);
             } else {
-                cb && cb(res);
+                done && done(res);
             }
         });
 }
 
-function getMember(mid, cb) {
+function getMember(mid, done) {
     let headers = _.assign({}, gHeaders, {
         'Cookie': getCookie(),
     });
@@ -613,7 +613,7 @@ function getMember(mid, cb) {
             if (err || !res.ok) {
                 console.error(err);
             } else {
-                cb && cb(res);
+                done && done(res);
             }
         });
 }
