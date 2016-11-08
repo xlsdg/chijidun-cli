@@ -49,7 +49,7 @@ function init() {
 function main() {
     init();
 
-    console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版) v1.3.2'));
+    console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版)~'));
 
     return procMain();
 }
