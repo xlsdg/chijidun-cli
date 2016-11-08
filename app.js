@@ -55,61 +55,71 @@ function main() {
 }
 
 function procMain() {
-    return getLogin(function(res) {
-        updateCookieByHeader(res.header);
-        return menuLogin(function(aws) {
-            return postLogin(aws.phone, aws.password, function(res) {
-                if (res.statusCode !== 302) {
-                    return console.log(Chalk.red('登录失败!!!'));
-                }
-                updateCookieByHeader(res.header);
-                return getOrder(function(res) {
-                    let htmlOrder = res.text;
-                    gInfo.cid = getCid(htmlOrder);
-                    if (!gInfo.cid) {
-                        return console.log(Chalk.red('获取 cid 失败!!!'));
-                    }
-                    showHtmlInfo(htmlOrder);
-                    return getMembersAndOrder(gInfo.cid, function(res) {
-                        let jsonMembersAndOrder = JSON.parse(res.text);
-                        gInfo.order = jsonMembersAndOrder.data.order;
-
-                        let $members = Cheerio.load(jsonMembersAndOrder.data.members);
-                        $members('.nav.nav-list > li').each(function(i, elem) {
-                            gInfo.members[$members(elem).data('id')] = {
-                                'name': $members(elem).text(),
-                                'menus': {}
-                            };
-                        });
-
-                        let $address = Cheerio.load(jsonMembersAndOrder.data.address);
-                        $address('li').each(function(i, elem) {
-                            gInfo.address[$address(elem).data('id')] = $address(elem).find('.name').text();
-                        });
-
-                        let arrMid = _.keys(gInfo.members);
-                        return Async.mapLimit(arrMid, 4, function(mid, callback) {
-                            return getMenu(mid, function(res) {
-                                let jsonMenu = JSON.parse(res.text);
-                                let $menus = Cheerio.load(jsonMenu.data);
-                                $menus('li').each(function(i, elem) {
-                                    let strMark = $menus(elem).find('.color-mark').text();
-                                    strMark = strMark ? ('(' + strMark + ')') : '';
-                                    gInfo.members[mid].menus[$menus(elem).data('id')] = $menus(elem).find('.title').text() + strMark;
-                                });
-                                return callback(null, jsonMenu);
-                            });
-                        }, function(err, result) {
-                            if (err) {
-                                return console.error(err);
-                            } else {
-                                return showOrderInfo();
-                            }
-                        });
-                    });
-                });
+    return Async.waterfall([
+        function(done) {
+            return getLogin(function(res) {
+                return updateCookieByHeader(res.header) && done(null, res);
             });
-        });
+        },
+        function(data, done) {
+            return menuLogin(function(aws) {
+                return done(null, aws);
+            });
+        },
+        function(data, done) {
+            return postLogin(data.phone, data.password, function(res) {
+                if (res.statusCode !== 302) {
+                    return done('登录失败!!!');
+                } else {
+                    return updateCookieByHeader(res.header) && done(null, res);
+                }
+            });
+        },
+        function(data, done) {
+            return getOrder(function(res) {
+                return !(gInfo.cid = getCid(res.text)) ? done('获取 cid 失败!!!') : done(null, res);
+            });
+        },
+        function(data, done) {
+            return getMembersAndOrder(gInfo.cid, function(res) {
+                let jsonMembersAndOrder = JSON.parse(res.text);
+                gInfo.order = jsonMembersAndOrder.data.order;
+
+                let $members = Cheerio.load(jsonMembersAndOrder.data.members);
+                $members('.nav.nav-list > li').each(function(i, elem) {
+                    gInfo.members[$members(elem).data('id')] = {
+                        'name': $members(elem).text(),
+                        'menus': {}
+                    };
+                });
+
+                let $address = Cheerio.load(jsonMembersAndOrder.data.address);
+                $address('li').each(function(i, elem) {
+                    gInfo.address[$address(elem).data('id')] = $address(elem).find('.name').text();
+                });
+
+                return done(null, res);
+            });
+        },
+        function(data, done) {
+            let arrMid = _.keys(gInfo.members);
+            return Async.map(arrMid, function(mid, cb) {
+                return getMenu(mid, function(res) {
+                    let jsonMenu = JSON.parse(res.text);
+                    let $menus = Cheerio.load(jsonMenu.data);
+                    $menus('li').each(function(i, elem) {
+                        let strMark = $menus(elem).find('.color-mark').text();
+                        strMark = strMark ? ('(' + strMark + ')') : '';
+                        gInfo.members[mid].menus[$menus(elem).data('id')] = $menus(elem).find('.title').text() + strMark;
+                    });
+                    return cb(null, jsonMenu);
+                });
+            }, function(err, res) {
+                return err ? done(err) : done(null, res);
+            });
+        }
+    ], function (err, res) {
+        return err ? console.log(Chalk.red(err)) : showOrderInfo();
     });
 }
 
