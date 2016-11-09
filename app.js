@@ -81,6 +81,7 @@ function procMain() {
             });
         },
         function(data, done) {
+            showHtmlInfo(data.text);
             return getMembersAndOrder(gInfo.cid, function(res) {
                 let jsonMembersAndOrder = JSON.parse(res.text);
                 gInfo.order = jsonMembersAndOrder.data.order;
@@ -413,7 +414,7 @@ function postLogin(username, password, done) {
         .send(encodeURI(`LoginForm[username]=${username}`))
         .send(encodeURI(`LoginForm[password]=${MD5(password)}`))
         .send(encodeURI(`LoginForm[autoLogin]=1`))
-        .send(encodeURI(`yt0=登录`))
+        // .send(encodeURI(`yt0=登录`))
         .charset('utf-8')
         .retry(2)
         .end(function(err, res) {
