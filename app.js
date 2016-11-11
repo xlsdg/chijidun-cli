@@ -25,6 +25,8 @@ const Log = Bunyan.createLogger({
 
 let gCookie = Request.jar(new CookieKit('cookies.json'));
 const gRequest = Request.defaults({
+    // 'proxy': 'http://8.8.8.8:8888',
+    'gzip': true,
     'simple': false, // Get a rejection only if the request failed for technical reasons
     'resolveWithFullResponse': true, // Get the full response instead of just the body
     'followRedirect': false,
