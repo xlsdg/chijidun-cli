@@ -8,13 +8,28 @@ const _ = require('lodash');
 const Cheerio = require('cheerio');
 const MD5 = require('blueimp-md5');
 const Async = require('async');
-const SuperAgent = require('superagent');
-const Charset = require('superagent-charset');
-const Retry = require('superagent-retry');
+const Request = require('request-promise-native');
+const CookieKit = require('tough-cookie-kit');
 const Moment = require('moment');
 const Inquirer = require('inquirer');
 const Chalk = require('chalk');
+const Bunyan = require('bunyan');
 
+
+const Log = Bunyan.createLogger({
+    name: 'chijidun-cli',
+    src: true
+});
+// Log.trace, Log.debug, Log.info, Log.warn, Log.error, and Log.fatal
+
+
+let gCookie = Request.jar(new CookieKit('cookies.json'));
+const gRequest = Request.defaults({
+    'simple': false, // Get a rejection only if the request failed for technical reasons
+    'resolveWithFullResponse': true, // Get the full response instead of just the body
+    'followRedirect': false,
+    'jar': gCookie
+});
 
 let gHeaders = {
     'Accept': 'application/json, text/javascript, */*; q=0.01',
@@ -25,65 +40,66 @@ let gHeaders = {
     'Host': 'wos.chijidun.com',
     'Pragma': 'no-cache',
     'Referer': 'http://wos.chijidun.com/order.html',
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.75 Safari/537.36 QQBrowser/4.1.4132.400',
-    'X-Requested-With': 'XMLHttpRequest'
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.75 Safari/537.36 QQBrowser/4.1.4132.400'
 };
-
-let gCookie = [];
 
 let gInfo = {
     'cid': '',
     'time': '00:00:00',
     'members': {}, // 餐厅列表
     'address': {}, // 收获地址
-    'order': false, // 订单 id
+    'order': false // 订单 id
 };
 
 main();
 
-function init() {
-    Charset(SuperAgent);
-    Retry(SuperAgent);
+function main() {
+    console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版)~'));
+    return procMain();
 }
 
-function main() {
-    init();
-
-    console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版)~'));
-
-    return procMain();
+function isLogin(data) {
+    return (data && data.headers && data.headers.location);
 }
 
 function procMain() {
     return Async.waterfall([
         function(done) {
-            return getLogin(function(res) {
-                return updateCookieByHeader(res.header) && done(null, res);
+            return getLogin().then(function(res) {
+                return done(null, res);
             });
         },
         function(data, done) {
-            return menuLogin(function(aws) {
+            if (isLogin(data)) {
+                return done(null, data);
+            }
+
+            return menuLogin().then(function(aws) {
                 return done(null, aws);
             });
         },
         function(data, done) {
-            return postLogin(data.phone, data.password, function(res) {
+            if (isLogin(data)) {
+                return done(null, data);
+            }
+
+            return postLogin(data.phone, data.password).then(function(res) {
                 if (res.statusCode !== 302) {
                     return done('登录失败!!!');
                 } else {
-                    return updateCookieByHeader(res.header) && done(null, res);
+                    return done(null, res);
                 }
             });
         },
         function(data, done) {
-            return getOrder(function(res) {
-                return !(gInfo.cid = getCid(res.text)) ? done('获取 cid 失败!!!') : done(null, res);
+            return getOrder().then(function(res) {
+                return !(gInfo.cid = getCid(res.body)) ? done('获取 cid 失败!!!') : done(null, res);
             });
         },
         function(data, done) {
-            showHtmlInfo(data.text);
-            return getMembersAndOrder(gInfo.cid, function(res) {
-                let jsonMembersAndOrder = JSON.parse(res.text);
+            showHtmlInfo(data.body);
+            return getMembersAndOrder(gInfo.cid).then(function(res) {
+                let jsonMembersAndOrder = res.body;
                 gInfo.order = jsonMembersAndOrder.data.order;
 
                 let $members = Cheerio.load(jsonMembersAndOrder.data.members);
@@ -105,8 +121,8 @@ function procMain() {
         function(data, done) {
             let arrMid = _.keys(gInfo.members);
             return Async.map(arrMid, function(mid, cb) {
-                return getMenu(mid, function(res) {
-                    let jsonMenu = JSON.parse(res.text);
+                return getMenu(mid).then(function(res) {
+                    let jsonMenu = res.body;
                     let $menus = Cheerio.load(jsonMenu.data);
                     $menus('li').each(function(i, elem) {
                         let strMark = $menus(elem).find('.color-mark').text();
@@ -124,7 +140,7 @@ function procMain() {
     });
 }
 
-function menuLogin(done) {
+function menuLogin() {
     let questions = [{
         'type': 'input',
         'name': 'phone',
@@ -148,12 +164,10 @@ function menuLogin(done) {
         }
     }];
 
-    return Inquirer.prompt(questions).then(function(aws) {
-        done && done(aws);
-    });
+    return Inquirer.prompt(questions);
 }
 
-function menuAddress(mid, done) {
+function menuAddress() {
     let questions = [{
         type: 'list',
         name: 'address',
@@ -171,12 +185,10 @@ function menuAddress(mid, done) {
     questions[0].choices.push(new Inquirer.Separator());
     questions[0].choices.push({'name': '返回', 'value': 'back'});
 
-    return Inquirer.prompt(questions).then(function(aws) {
-        done && done(mid, aws);
-    });
+    return Inquirer.prompt(questions);
 }
 
-function menuOrder(done) {
+function menuOrder() {
     let questions = [{
         type: 'list',
         name: 'mid',
@@ -201,12 +213,10 @@ function menuOrder(done) {
     questions[0].choices.push(new Inquirer.Separator());
     questions[0].choices.push({'name': '返回', 'value': 'back'});
 
-    return Inquirer.prompt(questions).then(function(aws) {
-        done && done(aws);
-    });
+    return Inquirer.prompt(questions);
 }
 
-function menuSaveOrder(done) {
+function menuSaveOrder() {
     let questions = [{
         type: 'list',
         name: 'step',
@@ -223,12 +233,10 @@ function menuSaveOrder(done) {
         questions[0].choices.shift();
     }
 
-    return Inquirer.prompt(questions).then(function(aws) {
-        done && done(aws);
-    });
+    return Inquirer.prompt(questions);
 }
 
-function menuDeleteOrder(done) {
+function menuDeleteOrder() {
     let questions = [{
         type: 'list',
         name: 'step',
@@ -245,9 +253,7 @@ function menuDeleteOrder(done) {
         questions[0].choices.shift();
     }
 
-    return Inquirer.prompt(questions).then(function(aws) {
-        done && done(aws);
-    });
+    return Inquirer.prompt(questions);
 }
 
 function getEndTime() {
@@ -265,7 +271,7 @@ function showHtmlInfo(strHtml) {
 function showOrderInfo() {
     if (gInfo.order === false) {
         console.log(Chalk.inverse(`您今天还未点餐哦!`));
-        return menuSaveOrder(procOrderInfo);
+        return menuSaveOrder().then(procOrderInfo);
     } else {
         let $lis = Cheerio.load(gInfo.order.lis);
         console.log(Chalk.magenta(`您今天的点餐订单信息:`));
@@ -273,28 +279,28 @@ function showOrderInfo() {
         console.log(Chalk.white(`餐厅: ${$lis('span').text().split('|')[0]}`));
         console.log(Chalk.white(`套餐: ${gInfo.order.menus}`));
         console.log(Chalk.white(`地址: ${gInfo.order.address}`));
-        return menuDeleteOrder(procOrderInfo);
+        return menuDeleteOrder().then(procOrderInfo);
     }
 }
 
-function updateOrderInfo(done) {
-    return getMembersAndOrder(gInfo.cid, function(res) {
-        let jsonMembersAndOrder = JSON.parse(res.text);
+function updateOrderInfo() {
+    return getMembersAndOrder(gInfo.cid).then(function(res) {
+        let jsonMembersAndOrder = res.body;
         if (!jsonMembersAndOrder.data) {
             console.log(Chalk.white(`Cookie 失效, 需要`, Chalk.underline.bgRed(`重新登录`)));
             return procMain();
         }
         gInfo.order = jsonMembersAndOrder.data.order;
-        return done && done(res);
+        return res;
     });
 }
 
 function procAddress(mid, aws) {
     if (aws.address === 'back') {
-        return menuOrder(procOrder);
+        return menuOrder().then(procOrder);
     } else {
-        return saveOrder(mid, aws.address, function(res) {
-            return updateOrderInfo(function(res) {
+        return saveOrder(mid, aws.address).then(function(res) {
+            return updateOrderInfo().then(function(res) {
                 return showOrderInfo();
             });
         });
@@ -305,28 +311,30 @@ function procOrder(aws) {
     if (aws.mid === 'back') {
         return showOrderInfo();
     } else {
-        return menuAddress(aws.mid, procAddress);
+        return menuAddress().then(function(_aws) {
+            return procAddress(aws.mid, _aws);
+        });
     }
 }
 
 function procOrderInfo(aws) {
     switch(aws.step) {
         case 'save':
-            return menuOrder(procOrder);
+            return menuOrder().then(procOrder);
         case 'delete':
-            return deleteOrder(gInfo.order.id, function(res) {
-                return updateOrderInfo(function(res) {
+            return deleteOrder(gInfo.order.id).then(function(res) {
+                return updateOrderInfo().then(function(res) {
                     return showOrderInfo();
                 });
             });
         case 'refresh':
-            return updateOrderInfo(function(res) {
+            return updateOrderInfo().then(function(res) {
                 return showOrderInfo();
             });
         case 'exit':
-            return getLogOut(function(res) {
+            // return getLogOut().then(function(res) {
                 process.exit(0);
-            });
+            // });
     }
 }
 
@@ -336,140 +344,57 @@ function getCid(strHtml) {
     return ((arrCid.length !== 2) ? null : arrCid[1]);
 }
 
-function findCookieByKey(key) {
-    for (let i = 0, len = gCookie.length; i < len; i++) {
-        if (gCookie[i].indexOf(key) > -1) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-function getCookieByStrSetCookie(strSetCookie) {
-    return strSetCookie.split(';')[0];
-}
-
-function getCookie() {
-    return gCookie.join('; ');
-}
-
-function setCookie(strCookie) {
-    let strKey = strCookie.split('=')[0];
-    let index = findCookieByKey(strKey);
-    if (index === -1) {
-        gCookie.push(strCookie);
-    } else {
-        gCookie[index] = strCookie;
-    }
-    return index;
-}
-
-function updateCookieByHeader(header) {
-    let arrSetCookie = header['set-cookie'] || [];
-    return _.forEach(arrSetCookie, function(strSetCookie) {
-        setCookie(getCookieByStrSetCookie(strSetCookie));
-    });
-}
-
-function getLogin(done) {
+function getLogin() {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Upgrade-Insecure-Requests': 1
     });
-    delete headers['X-Requested-With'];
 
-    return SuperAgent
-        .get('http://wos.chijidun.com/login.html')
-        .withCredentials()
-        .set(headers)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            if (err || !res.ok) {
-                console.error(err);
-            } else {
-                done && done(res);
-            }
-        });
+    return getHtml('http://wos.chijidun.com/login.html', headers);
 }
 
-function postLogin(username, password, done) {
+function postLogin(username, password) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Encoding': 'gzip, deflate',
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Cookie': getCookie(),
         'Origin': 'http://wos.chijidun.com',
         'Referer': 'http://wos.chijidun.com/login.html',
         'Upgrade-Insecure-Requests': 1
     });
-    delete headers['X-Requested-With'];
 
-    return SuperAgent
-        .post('http://wos.chijidun.com/login.html')
-        .redirects(0)
-        .type('form')
-        .withCredentials()
-        .set(headers)
-        .send(encodeURI(`LoginForm[username]=${username}`))
-        .send(encodeURI(`LoginForm[password]=${MD5(password)}`))
-        .send(encodeURI(`LoginForm[autoLogin]=1`))
-        // .send(encodeURI(`yt0=登录`))
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            done && done(res);
-        });
+    let form = {
+        'LoginForm[username]': username,
+        'LoginForm[password]': MD5(password),
+        'LoginForm[autoLogin]': 1
+    };
+
+    return postForm('http://wos.chijidun.com/login.html', headers, form);
 }
 
-function getLogOut(done) {
+function getLogOut() {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Cookie': getCookie(),
         'Referer': 'http://wos.chijidun.com/order.html',
         'Upgrade-Insecure-Requests': 1
     });
-    delete headers['X-Requested-With'];
 
-    return SuperAgent
-        .get('http://wos.chijidun.com/logout.html')
-        .redirects(0)
-        .withCredentials()
-        .set(headers)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            done && done(res);
-        });
+    return getHtml('http://wos.chijidun.com/logout.html', headers);
 }
 
-function getOrder(done) {
+function getOrder() {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Cookie': getCookie(),
         'Referer': 'http://wos.chijidun.com/login.html',
         'Upgrade-Insecure-Requests': 1
     });
-    delete headers['X-Requested-With'];
 
-    return SuperAgent
-        .get('http://wos.chijidun.com/order.html')
-        .withCredentials()
-        .set(headers)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            if (err || !res.ok) {
-                console.error(err);
-            } else {
-                done && done(res);
-            }
-        });
+    return getHtml('http://wos.chijidun.com/order.html', headers);
 }
 
-function getMembersAndOrder(cid, done) {
+function getMembersAndOrder(cid) {
     let headers = _.assign({}, gHeaders, {
-        'Cookie': getCookie(),
+        'X-Requested-With': 'XMLHttpRequest'
     });
 
     let data = {
@@ -478,25 +403,12 @@ function getMembersAndOrder(cid, done) {
         'mealType': 3 // 1:早餐 2:午餐 3:晚餐
     };
 
-    return SuperAgent
-        .get('http://wos.chijidun.com/order/getMembersAndOrder.html')
-        .query(data)
-        .withCredentials()
-        .set(headers)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            if (err || !res.ok) {
-                console.error(err);
-            } else {
-                done && done(res);
-            }
-        });
+    return getJson('http://wos.chijidun.com/order/getMembersAndOrder.html', headers, data);
 }
 
-function getMenu(mid, done) {
+function getMenu(mid) {
     let headers = _.assign({}, gHeaders, {
-        'Cookie': getCookie(),
+        'X-Requested-With': 'XMLHttpRequest'
     });
 
     let data = {
@@ -505,81 +417,49 @@ function getMenu(mid, done) {
         'type': 3 // 1:早餐 2:午餐 3:晚餐
     };
 
-    return SuperAgent
-        .get('http://wos.chijidun.com/order/getMenu.html')
-        .query(data)
-        .withCredentials()
-        .set(headers)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            if (err || !res.ok) {
-                console.error(err);
-            } else {
-                done && done(res);
-            }
-        });
+    return getJson('http://wos.chijidun.com/order/getMenu.html', headers, data);
 }
 
-function saveOrder(menuId, addrId, done) {
+function saveOrder(menuId, addrId) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'application/json, text/javascript, */*; q=0.01',
         'Accept-Encoding': 'gzip, deflate',
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'Cookie': getCookie(),
         'Origin': 'http://wos.chijidun.com',
-        'Referer': 'http://wos.chijidun.com/order.html'
+        'Referer': 'http://wos.chijidun.com/order.html',
+        'X-Requested-With': 'XMLHttpRequest'
     });
 
-    return SuperAgent
-        .post('http://wos.chijidun.com/order/saveOrder.html')
-        .redirects(0)
-        .type('form')
-        .withCredentials()
-        .set(headers)
-        .send(`items=${menuId}:1;&addrId=${addrId}&mealType=3&date=${Moment().format('YYYY-MM-DD')}`)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            if (err || !res.ok) {
-                console.error(err);
-            } else {
-                done && done(res);
-            }
-        });
+    let form = {
+        'items': menuId + ':1',
+        'addrId': addrId,
+        'mealType': 3, // 1:早餐 2:午餐 3:晚餐
+        'date': Moment().format('YYYY-MM-DD')
+    };
+
+    return postForm('http://wos.chijidun.com/order/saveOrder.html', headers, form);
 }
 
-function deleteOrder(orderId, done) {
+function deleteOrder(orderId) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'application/json, text/javascript, */*; q=0.01',
         'Accept-Encoding': 'gzip, deflate',
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'Cookie': getCookie(),
         'Origin': 'http://wos.chijidun.com',
-        'Referer': 'http://wos.chijidun.com/order.html'
+        'Referer': 'http://wos.chijidun.com/order.html',
+        'X-Requested-With': 'XMLHttpRequest'
     });
 
-    return SuperAgent
-        .post('http://wos.chijidun.com/order/deleteOrder.html')
-        .redirects(0)
-        .type('form')
-        .withCredentials()
-        .set(headers)
-        .send(`orderId=${orderId}`)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            if (err || !res.ok) {
-                console.error(err);
-            } else {
-                done && done(res);
-            }
-        });
+    let form = {
+        'orderId': orderId
+    };
+
+    return postForm('http://wos.chijidun.com/order/deleteOrder.html', headers, form);
 }
 
-function memberFull(mid, done) {
+function memberFull(mid) {
     let headers = _.assign({}, gHeaders, {
-        'Cookie': getCookie(),
+        'X-Requested-With': 'XMLHttpRequest'
     });
 
     let data = {
@@ -588,43 +468,82 @@ function memberFull(mid, done) {
         'type': 3 // 1:早餐 2:午餐 3:晚餐
     };
 
-    return SuperAgent
-        .get('http://wos.chijidun.com/order/memberFull.html')
-        .query(data)
-        .withCredentials()
-        .set(headers)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            if (err || !res.ok) {
-                console.error(err);
-            } else {
-                done && done(res);
-            }
-        });
+    return getJson('http://wos.chijidun.com/order/memberFull.html', headers, data);
 }
 
-function getMember(mid, done) {
+function getMember(mid) {
     let headers = _.assign({}, gHeaders, {
-        'Cookie': getCookie(),
+        'X-Requested-With': 'XMLHttpRequest'
     });
 
     let data = {
         'id': mid,
     };
 
-    return SuperAgent
-        .get('http://wos.chijidun.com/order/getMember.html')
-        .query(data)
-        .withCredentials()
-        .set(headers)
-        .charset('utf-8')
-        .retry(2)
-        .end(function(err, res) {
-            if (err || !res.ok) {
-                console.error(err);
-            } else {
-                done && done(res);
-            }
-        });
+    return getJson('http://wos.chijidun.com/order/getMember.html', headers, data);
 }
+
+function getHtml(url, headers, data) {
+    let options = {
+        'url': url,
+        'headers': headers,
+        'qs': data
+    };
+    return get(options);
+}
+
+function getJson(url, headers, data) {
+    let options = {
+        'url': url,
+        'headers': headers,
+        'qs': data,
+        'json': true
+    };
+    return get(options);
+}
+
+function postJson(url, headers, json) {
+    let options = {
+        'url': url,
+        'headers': headers,
+        'body': json,
+        'json': true
+    };
+    return post(options);
+}
+
+function postForm(url, headers, form) {
+    let options = {
+        'url': url,
+        'headers': headers,
+        'form': form
+    };
+    return post(options);
+}
+
+function get(options) {
+    return reqHttp(_.assign({}, options, {
+        'method': 'GET'
+    }));
+}
+
+function post(options) {
+    return reqHttp(_.assign({}, options, {
+        'method': 'POST'
+    }));
+}
+
+function reqHttp(options) {
+    return gRequest(options)
+        .then(procReqSucceeded)
+        .catch(procReqFailed);
+}
+
+function procReqSucceeded(response) {
+    return response;
+}
+
+function procReqFailed(error) {
+    return Log.error(error);
+}
+
