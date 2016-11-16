@@ -51,7 +51,11 @@ let gHeaders = {
 };
 
 let gInfo = {
-    'eggs': false,
+    'today': Moment().format('YYYY-MM-DD'),
+    'type': TYPE_DINNER,
+    'future': null,
+    'try': 0,
+    'eggs': null,
     'cid': '',
     'time': '00:00:00',
     'members': {}, // 餐厅列表
@@ -63,10 +67,7 @@ main();
 
 function main() {
     console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版)~'));
-    // return procMain();
-    return menuDeleteOrder().then(function(aws) {
-        return console.log(aws);
-    });
+    return procMain();
 }
 
 function isLogin(data) {
@@ -74,9 +75,6 @@ function isLogin(data) {
 }
 
 function procMain() {
-    let today = Moment().format('YYYY-MM-DD');
-    let type = TYPE_DINNER;
-
     return Async.waterfall([
         function(done) {
             return getLogin().then(function(res) {
@@ -108,12 +106,12 @@ function procMain() {
         },
         function(data, done) {
             showHtmlInfo(data.body);
-            return updateMembersAndOrder(today, type).then(function(res) {
+            return updateMembersAndOrder(gInfo.today, gInfo.type).then(function(res) {
                 return res ? done(null, res) : done('Cookie 失效!!!');
             });
         },
         function(data, done) {
-            return updateMenu(today, type, function(err, res) {
+            return updateMenu(gInfo.today, gInfo.type, function(err, res) {
                 return err ? done(err) : done(null, res);
             });
         }
@@ -330,6 +328,31 @@ function updateMembersAndOrder(date, type) {
     });
 }
 
+function updateMembers(date, type) {
+    return getMembersAndOrder(gInfo.cid, date, type).then(function(res) {
+        let jsonMembersAndOrder = res.body;
+        if (!jsonMembersAndOrder.data) {
+            return null;
+        }
+        gInfo.members = {};
+
+        let $members = Cheerio.load(jsonMembersAndOrder.data.members);
+        $members('.nav.nav-list > li').each(function(i, elem) {
+            gInfo.members[$members(elem).data('id')] = {
+                'name': $members(elem).text(),
+                'menus': {}
+            };
+        });
+
+        let $address = Cheerio.load(jsonMembersAndOrder.data.address);
+        $address('li').each(function(i, elem) {
+            gInfo.address[$address(elem).data('id')] = $address(elem).find('.name').text();
+        });
+
+        return res;
+    });
+}
+
 function updateMenu(date, type, done) {
     let arrMid = _.keys(gInfo.members);
     return Async.map(arrMid, function(mid, cb) {
@@ -350,7 +373,7 @@ function procAddress(mid, aws) {
     if (aws.address === 'back') {
         return menuOrder().then(procOrder);
     } else {
-        return saveOrder(mid, aws.address, Moment().format('YYYY-MM-DD'), TYPE_DINNER).then(function(res) {
+        return saveOrder(mid, aws.address, gInfo.today, gInfo.type).then(function(res) {
             return refreshOrderInfo().then(showOrderInfo);
         });
     }
@@ -366,11 +389,36 @@ function procOrder(aws) {
     }
 }
 
-function procDate(aws) {
+function procBookAddress(mid, aws) {
+    if (aws.address === 'back') {
+        return menuOrder().then(procBookOrder);
+    } else {
+        // return saveOrder(mid, aws.address, gInfo.future, gInfo.type).then(function(res) {
+        //     return refreshOrderInfo().then(showOrderInfo);
+        // });
+    }
+}
+
+function procBookOrder(aws) {
     if (aws.mid === 'back') {
+        return menuDate().then(procDate);
+    } else {
+        return menuAddress().then(function(_aws) {
+            return procBookAddress(aws.mid, _aws);
+        });
+    }
+}
+
+function procDate(aws) {
+    if (aws.date === 'back') {
         return showOrderInfo();
     } else {
-        return menuOrder().then(procOrder);
+        gInfo.future = aws.date;
+        return updateMembers(gInfo.future, gInfo.type).then(function(res) {
+            return updateMenu(gInfo.future, gInfo.type, function(err, res) {
+                return menuOrder().then(procBookOrder);
+            });
+        });
     }
 }
 
@@ -385,11 +433,24 @@ function procOrderInfo(aws) {
                 return refreshOrderInfo().then(showOrderInfo);
             });
         case 'refresh':
+            playEggs();
             return refreshOrderInfo().then(showOrderInfo);
         case 'exit':
             // return getLogOut().then(function(res) {
                 process.exit(0);
             // });
+    }
+}
+
+function playEggs() {
+    if (gInfo.eggs === null) {
+        gInfo.eggs = setTimeout(function() {
+            clearTimeout(gInfo.eggs);
+            gInfo.eggs = (gInfo.try === 3) ? true : null;
+            gInfo.try = 0;
+        }, 7 * 1000);
+    } else if (gInfo.eggs !== true) {
+        gInfo.try++;
     }
 }
 
