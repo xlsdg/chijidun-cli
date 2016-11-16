@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 'use strict';
 
 
@@ -14,6 +13,12 @@ const Moment = require('moment');
 const Inquirer = require('inquirer');
 const Chalk = require('chalk');
 const Bunyan = require('bunyan');
+const Schedule = require('node-schedule');
+
+
+const TYPE_BREAKFAST = 1;   // 早餐
+const TYPE_LUNCH = 2;       // 午餐
+const TYPE_DINNER = 3;      // 晚餐
 
 
 const Log = Bunyan.createLogger({
@@ -46,6 +51,7 @@ let gHeaders = {
 };
 
 let gInfo = {
+    'eggs': false,
     'cid': '',
     'time': '00:00:00',
     'members': {}, // 餐厅列表
@@ -57,7 +63,10 @@ main();
 
 function main() {
     console.log(Chalk.yellow('欢迎使用 吃几顿(命令行版)~'));
-    return procMain();
+    // return procMain();
+    return menuDeleteOrder().then(function(aws) {
+        return console.log(aws);
+    });
 }
 
 function isLogin(data) {
@@ -65,6 +74,9 @@ function isLogin(data) {
 }
 
 function procMain() {
+    let today = Moment().format('YYYY-MM-DD');
+    let type = TYPE_DINNER;
+
     return Async.waterfall([
         function(done) {
             return getLogin().then(function(res) {
@@ -86,11 +98,7 @@ function procMain() {
             }
 
             return postLogin(data.phone, data.password).then(function(res) {
-                if (res.statusCode !== 302) {
-                    return done('登录失败!!!');
-                } else {
-                    return done(null, res);
-                }
+                return (res.statusCode !== 302) ? done('登录失败!!!') : done(null, res);
             });
         },
         function(data, done) {
@@ -100,45 +108,17 @@ function procMain() {
         },
         function(data, done) {
             showHtmlInfo(data.body);
-            return getMembersAndOrder(gInfo.cid).then(function(res) {
-                let jsonMembersAndOrder = res.body;
-                gInfo.order = jsonMembersAndOrder.data.order;
-
-                let $members = Cheerio.load(jsonMembersAndOrder.data.members);
-                $members('.nav.nav-list > li').each(function(i, elem) {
-                    gInfo.members[$members(elem).data('id')] = {
-                        'name': $members(elem).text(),
-                        'menus': {}
-                    };
-                });
-
-                let $address = Cheerio.load(jsonMembersAndOrder.data.address);
-                $address('li').each(function(i, elem) {
-                    gInfo.address[$address(elem).data('id')] = $address(elem).find('.name').text();
-                });
-
-                return done(null, res);
+            return updateMembersAndOrder(today, type).then(function(res) {
+                return res ? done(null, res) : done('Cookie 失效!!!');
             });
         },
         function(data, done) {
-            let arrMid = _.keys(gInfo.members);
-            return Async.map(arrMid, function(mid, cb) {
-                return getMenu(mid).then(function(res) {
-                    let jsonMenu = res.body;
-                    let $menus = Cheerio.load(jsonMenu.data);
-                    $menus('li').each(function(i, elem) {
-                        let strMark = $menus(elem).find('.color-mark').text();
-                        strMark = strMark ? ('(' + strMark + ')') : '';
-                        gInfo.members[mid].menus[$menus(elem).data('id')] = $menus(elem).find('.title').text() + strMark;
-                    });
-                    return cb(null, jsonMenu);
-                });
-            }, function(err, res) {
+            return updateMenu(today, type, function(err, res) {
                 return err ? done(err) : done(null, res);
             });
         }
     ], function (err, res) {
-        return err ? console.log(Chalk.red(err)) : showOrderInfo();
+        return err ? console.log(Chalk.red(err)) : showOrderInfo(res);
     });
 }
 
@@ -165,6 +145,30 @@ function menuLogin() {
             return true;
         }
     }];
+
+    return Inquirer.prompt(questions);
+}
+
+function menuDate() {
+    let questions = [{
+        type: 'list',
+        name: 'date',
+        message: '您想要预定哪一天呢?',
+        choices: [],
+    }];
+
+    for (let i = 1, today = Moment(); i < 8; i++) {
+        let nextDate = today.add(1, 'd');
+        if ((0 < nextDate.day()) && (nextDate.day() < 6)) {
+            questions[0].choices.push({
+                'name': nextDate.format('YYYY-MM-DD (dddd)'),
+                'value': nextDate.format('YYYY-MM-DD')
+            });
+        }
+    }
+
+    questions[0].choices.push(new Inquirer.Separator());
+    questions[0].choices.push({'name': '返回', 'value': 'back'});
 
     return Inquirer.prompt(questions);
 }
@@ -251,6 +255,10 @@ function menuDeleteOrder() {
         ],
     }];
 
+    if (gInfo.eggs === true) {
+        questions[0].choices.splice(1, 0, {'name': '预定', 'value': 'book'});
+    }
+
     if ((new Date().getTime()) >= getEndTime()) {
         questions[0].choices.shift();
     }
@@ -270,7 +278,7 @@ function showHtmlInfo(strHtml) {
     console.log(Chalk.white(`订餐截止时间 `, Chalk.underline.bgRed(gInfo.time)));
 }
 
-function showOrderInfo() {
+function showOrderInfo(res) {
     if (gInfo.order === false) {
         console.log(Chalk.inverse(`您今天还未点餐哦!`));
         return menuSaveOrder().then(procOrderInfo);
@@ -285,26 +293,65 @@ function showOrderInfo() {
     }
 }
 
-function updateOrderInfo() {
-    return getMembersAndOrder(gInfo.cid).then(function(res) {
-        let jsonMembersAndOrder = res.body;
-        if (!jsonMembersAndOrder.data) {
+function refreshOrderInfo() {
+    return updateMembersAndOrder(Moment().format('YYYY-MM-DD'), TYPE_DINNER).then(function(res) {
+        if (!res) {
             console.log(Chalk.white(`Cookie 失效, 需要`, Chalk.underline.bgRed(`重新登录`)));
             return procMain();
         }
-        gInfo.order = jsonMembersAndOrder.data.order;
         return res;
     });
+}
+
+function updateMembersAndOrder(date, type) {
+    return getMembersAndOrder(gInfo.cid, date, type).then(function(res) {
+        let jsonMembersAndOrder = res.body;
+        if (!jsonMembersAndOrder.data) {
+            return null;
+        }
+
+        gInfo.order = jsonMembersAndOrder.data.order;
+        gInfo.members = {};
+
+        let $members = Cheerio.load(jsonMembersAndOrder.data.members);
+        $members('.nav.nav-list > li').each(function(i, elem) {
+            gInfo.members[$members(elem).data('id')] = {
+                'name': $members(elem).text(),
+                'menus': {}
+            };
+        });
+
+        let $address = Cheerio.load(jsonMembersAndOrder.data.address);
+        $address('li').each(function(i, elem) {
+            gInfo.address[$address(elem).data('id')] = $address(elem).find('.name').text();
+        });
+
+        return res;
+    });
+}
+
+function updateMenu(date, type, done) {
+    let arrMid = _.keys(gInfo.members);
+    return Async.map(arrMid, function(mid, cb) {
+        return getMenu(mid, date, type).then(function(res) {
+            let jsonMenu = res.body;
+            let $menus = Cheerio.load(jsonMenu.data);
+            $menus('li').each(function(i, elem) {
+                let strMark = $menus(elem).find('.color-mark').text();
+                strMark = strMark ? ('(' + strMark + ')') : '';
+                gInfo.members[mid].menus[$menus(elem).data('id')] = $menus(elem).find('.title').text() + strMark;
+            });
+            return cb(null, jsonMenu);
+        });
+    }, done);
 }
 
 function procAddress(mid, aws) {
     if (aws.address === 'back') {
         return menuOrder().then(procOrder);
     } else {
-        return saveOrder(mid, aws.address).then(function(res) {
-            return updateOrderInfo().then(function(res) {
-                return showOrderInfo();
-            });
+        return saveOrder(mid, aws.address, Moment().format('YYYY-MM-DD'), TYPE_DINNER).then(function(res) {
+            return refreshOrderInfo().then(showOrderInfo);
         });
     }
 }
@@ -319,20 +366,26 @@ function procOrder(aws) {
     }
 }
 
+function procDate(aws) {
+    if (aws.mid === 'back') {
+        return showOrderInfo();
+    } else {
+        return menuOrder().then(procOrder);
+    }
+}
+
 function procOrderInfo(aws) {
     switch(aws.step) {
         case 'save':
             return menuOrder().then(procOrder);
+        case 'book':
+            return menuDate().then(procDate);
         case 'delete':
             return deleteOrder(gInfo.order.id).then(function(res) {
-                return updateOrderInfo().then(function(res) {
-                    return showOrderInfo();
-                });
+                return refreshOrderInfo().then(showOrderInfo);
             });
         case 'refresh':
-            return updateOrderInfo().then(function(res) {
-                return showOrderInfo();
-            });
+            return refreshOrderInfo().then(showOrderInfo);
         case 'exit':
             // return getLogOut().then(function(res) {
                 process.exit(0);
@@ -365,13 +418,13 @@ function postLogin(username, password) {
         'Upgrade-Insecure-Requests': 1
     });
 
-    let form = {
+    let data = {
         'LoginForm[username]': username,
         'LoginForm[password]': MD5(password),
         'LoginForm[autoLogin]': 1
     };
 
-    return postForm('http://wos.chijidun.com/login.html', headers, form);
+    return postForm('http://wos.chijidun.com/login.html', headers, data);
 }
 
 function getLogOut() {
@@ -394,35 +447,35 @@ function getOrder() {
     return getHtml('http://wos.chijidun.com/order.html', headers);
 }
 
-function getMembersAndOrder(cid) {
+function getMembersAndOrder(cid, date, type) {
     let headers = _.assign({}, gHeaders, {
         'X-Requested-With': 'XMLHttpRequest'
     });
 
     let data = {
         'cid': cid,
-        'date': Moment().format('YYYY-MM-DD'),
-        'mealType': 3 // 1:早餐 2:午餐 3:晚餐
+        'date': date,
+        'mealType': type
     };
 
     return getJson('http://wos.chijidun.com/order/getMembersAndOrder.html', headers, data);
 }
 
-function getMenu(mid) {
+function getMenu(mid, date, type) {
     let headers = _.assign({}, gHeaders, {
         'X-Requested-With': 'XMLHttpRequest'
     });
 
     let data = {
         'mid': mid,
-        'date': Moment().format('YYYY-MM-DD'),
-        'type': 3 // 1:早餐 2:午餐 3:晚餐
+        'date': date,
+        'type': type
     };
 
     return getJson('http://wos.chijidun.com/order/getMenu.html', headers, data);
 }
 
-function saveOrder(menuId, addrId) {
+function saveOrder(menuId, addrId, date, type) {
     let headers = _.assign({}, gHeaders, {
         'Accept': 'application/json, text/javascript, */*; q=0.01',
         'Accept-Encoding': 'gzip, deflate',
@@ -432,14 +485,14 @@ function saveOrder(menuId, addrId) {
         'X-Requested-With': 'XMLHttpRequest'
     });
 
-    let form = {
+    let data = {
         'items': menuId + ':1',
         'addrId': addrId,
-        'mealType': 3, // 1:早餐 2:午餐 3:晚餐
-        'date': Moment().format('YYYY-MM-DD')
+        'date': date,
+        'mealType': type
     };
 
-    return postForm('http://wos.chijidun.com/order/saveOrder.html', headers, form);
+    return postForm('http://wos.chijidun.com/order/saveOrder.html', headers, data);
 }
 
 function deleteOrder(orderId) {
@@ -452,22 +505,22 @@ function deleteOrder(orderId) {
         'X-Requested-With': 'XMLHttpRequest'
     });
 
-    let form = {
+    let data = {
         'orderId': orderId
     };
 
-    return postForm('http://wos.chijidun.com/order/deleteOrder.html', headers, form);
+    return postForm('http://wos.chijidun.com/order/deleteOrder.html', headers, data);
 }
 
-function memberFull(mid) {
+function memberFull(mid, date, type) {
     let headers = _.assign({}, gHeaders, {
         'X-Requested-With': 'XMLHttpRequest'
     });
 
     let data = {
         'mid': mid,
-        'date': Moment().format('YYYY-MM-DD'),
-        'type': 3 // 1:早餐 2:午餐 3:晚餐
+        'date': date,
+        'type': type
     };
 
     return getJson('http://wos.chijidun.com/order/memberFull.html', headers, data);

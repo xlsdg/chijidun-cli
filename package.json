@@ -31,6 +31,7 @@
     "inquirer": "^1.2.3",
     "lodash": "^4.17.0",
     "moment": "^2.16.0",
+    "node-schedule": "^1.2.0",
     "request": "^2.78.0",
     "request-promise-native": "^1.0.3",
     "tough-cookie-kit": "^0.1.1"
