@@ -271,8 +271,8 @@ function getEndTime() {
 
 function showHtmlInfo(strHtml) {
     let $order = Cheerio.load(strHtml);
-    gInfo.time = $order('span[name=time]').eq(0).text() + ':00';
-    console.log(Chalk.green(`欢迎 ${$order('.company-name').text()}(${$order('.company-desc').text()}) 的用户~`));
+    gInfo.time = _.trim($order('span[name=time]').eq(0).text()) + ':00';
+    console.log(Chalk.green(`欢迎 ${_.trim($order('.company-name').text())}(${_.trim($order('.company-desc').text())}) 的用户~`));
     console.log(Chalk.white(`订餐截止时间 `, Chalk.underline.bgRed(gInfo.time)));
 }
 
@@ -284,7 +284,7 @@ function showOrderInfo(res) {
         let $lis = Cheerio.load(gInfo.order.lis);
         console.log(Chalk.magenta(`您今天的点餐订单信息:`));
         console.log(Chalk.white(`单号: ${gInfo.order.id}`));
-        console.log(Chalk.white(`餐厅: ${$lis('span').text().split('|')[0]}`));
+        console.log(Chalk.white(`餐厅: ${_.trim($lis('span').text()).split('|')[0]}`));
         console.log(Chalk.white(`套餐: ${gInfo.order.menus}`));
         console.log(Chalk.white(`地址: ${gInfo.order.address}`));
         return menuDeleteOrder().then(procOrderInfo);
@@ -314,14 +314,14 @@ function updateMembersAndOrder(date, type) {
         let $members = Cheerio.load(jsonMembersAndOrder.data.members);
         $members('.nav.nav-list > li').each(function(i, elem) {
             gInfo.members[$members(elem).data('id')] = {
-                'name': $members(elem).text(),
+                'name': _.trim($members(elem).text()),
                 'menus': {}
             };
         });
 
         let $address = Cheerio.load(jsonMembersAndOrder.data.address);
         $address('li').each(function(i, elem) {
-            gInfo.address[$address(elem).data('id')] = $address(elem).find('.name').text();
+            gInfo.address[$address(elem).data('id')] = _.trim($address(elem).find('.name').text());
         });
 
         return res;
@@ -339,14 +339,14 @@ function updateMembers(date, type) {
         let $members = Cheerio.load(jsonMembersAndOrder.data.members);
         $members('.nav.nav-list > li').each(function(i, elem) {
             gInfo.members[$members(elem).data('id')] = {
-                'name': $members(elem).text(),
+                'name': _.trim($members(elem).text()),
                 'menus': {}
             };
         });
 
         let $address = Cheerio.load(jsonMembersAndOrder.data.address);
         $address('li').each(function(i, elem) {
-            gInfo.address[$address(elem).data('id')] = $address(elem).find('.name').text();
+            gInfo.address[$address(elem).data('id')] = _.trim($address(elem).find('.name').text());
         });
 
         return res;
@@ -360,9 +360,9 @@ function updateMenu(date, type, done) {
             let jsonMenu = res.body;
             let $menus = Cheerio.load(jsonMenu.data);
             $menus('li').each(function(i, elem) {
-                let strMark = $menus(elem).find('.color-mark').text();
+                let strMark = _.trim($menus(elem).find('.color-mark').text());
                 strMark = strMark ? ('(' + strMark + ')') : '';
-                gInfo.members[mid].menus[$menus(elem).data('id')] = $menus(elem).find('.title').text() + strMark;
+                gInfo.members[mid].menus[$menus(elem).data('id')] = _.trim($menus(elem).find('.title').text()) + strMark;
             });
             return cb(null, jsonMenu);
         });
